@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "Finny",
+    "slug": "finny-mobile",
+    "scheme": "finny",
+    "version": "1.0.0",
+    "sdkVersion": "57.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#f8f7f2"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.finny.finance"
+    },
+    "android": {
+      "package": "com.finny.finance",
+      "adaptiveIcon": {
+        "backgroundColor": "#f8f7f2"
+      }
+    }
+  }
+}

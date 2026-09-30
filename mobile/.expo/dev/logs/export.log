@@ -1,0 +1,8 @@
+{"_e":"root:init","_t":1790420364999,"format":"v0-jsonl","version":"57.0.27"}
+{"_e":"env:mode","_t":1790420373843,"nodeEnv":"production","babelEnv":"production","mode":"production"}
+{"_e":"env:load","_t":1790420373860,"mode":"production","files":["../..\\..\\.env"],"env":{"EXPO_PUBLIC_SUPABASE_ANON_KEY":"sb_publishable_HgywsfXwyLl8cEUqp_be5w_-obXb8LP","EXPO_PUBLIC_SUPABASE_URL":"https://sordmlpisfjscmnwsgqd.supabase.co"}}
+{"_e":"devserver:start","_t":1790420373929,"mode":"production","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":true}
+{"_e":"metro:config","_t":1790420378292,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":true,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"metro:instantiate","_t":1790420382957,"atlas":false,"workers":6,"host":null,"port":null}
+{"_e":"metro:bundling:started","_t":1790420385220,"id":"1","platform":"android","environment":null,"entry":"node_modules\\expo\\AppEntry.js"}
+{"_e":"metro:bundling:done","_t":1790420432910,"id":"1","total":645,"ms":47689.467}
