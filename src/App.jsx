@@ -117,6 +117,7 @@ export default function App() {
   })();
   const byCategory = ['need','want','emergency'].map(category => ({ category, value:monthExpenses.filter(item => item.category === category).reduce((sum, item) => sum + Number(item.amount), 0) }));
   if (!authReady) return <div className="loading-screen"><div className="brand-mark">f</div><p>Getting your space ready…</p></div>;
+  if (!supabase) return <SupabaseSetupScreen />;
   if (!session && supabase) return <AuthScreen t={t} mode={authMode} setMode={mode => { setAuthMode(mode); setAuthError(''); setAuthSuccess(false); }} form={authForm} setForm={update => { setAuthForm(update); setAuthError(''); setAuthSuccess(false); }} submit={submitAuth} error={authError} success={authSuccess} busy={authBusy} />;
   return <div className="app-shell">
     <aside className="sidebar">
@@ -132,6 +133,18 @@ export default function App() {
     {modal&&<EntryModal type={modal} close={()=>setModal('')} onSave={async value=>{try{let schemaFallback=false;if(modal==='deposit'){let entry=await addDeposit(session?.user?.id,value);if(!entry)entry={...value,id:crypto.randomUUID()};const next={...data,deposits:[entry,...data.deposits]};await save(next);}else{let entry=await addItem(session?.user?.id,value);if(!entry)entry={...value,id:crypto.randomUUID(),date:new Date().toISOString()};schemaFallback=Boolean(entry.schemaFallback);setData(v=>({...v,items:[entry,...v.items]}));}setModal('');notify(modal==='deposit'?'A little progress, logged.':schemaFallback?'Item added. Apply the latest Supabase schema to sync its note and date.':'Added to your wishlist.');}catch(err){notify(err.message)}}}/>}
     {toast&&<div className="toast"><Check size={15}/>{toast}</div>}
   </div>;
+}
+
+function SupabaseSetupScreen() {
+  return <div className="auth-wrap"><section className="auth-card auth-setup-card">
+    <a className="brand auth-brand"><span className="brand-mark">f</span><span>finny<span className="brand-period">.</span></span></a>
+    <div className="auth-illustration"><div className="sun-shape"/><span className="pig-illustration">🐷</span><span className="auth-spark spark-one">✦</span><span className="auth-spark spark-two">✦</span></div>
+    <p className="eyebrow">ACCOUNT CONNECTION</p><h1>Sign in is not configured yet</h1>
+    <p className="auth-sub auth-setup-copy">This website was built without its Supabase settings, so account access is unavailable. Add these two environment variables to your Vercel project, then redeploy:</p>
+    <div className="setup-variable"><code>VITE_SUPABASE_URL</code><span>Your Supabase project URL</span></div>
+    <div className="setup-variable"><code>VITE_SUPABASE_ANON_KEY</code><span>Your public publishable key</span></div>
+    <p className="auth-foot"><ShieldCheck size={13}/> Use the publishable key only. Never add a service role key to a website.</p>
+  </section></div>;
 }
 
 function AuthScreen({t,mode,setMode,form,setForm,submit,error,success,busy}) {
