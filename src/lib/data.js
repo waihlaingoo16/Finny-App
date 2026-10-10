@@ -26,6 +26,7 @@ export async function loadCloud(userId) {
   ]);
   if (profile.error || deposits.error || items.error) throw profile.error || deposits.error || items.error;
   return {
+    profileMissing: !profile.data,
     profile: profile.data ? { name: profile.data.name || 'Friend', goal: Number(profile.data.goal || 10000), monthlyBudget: Number(profile.data.monthly_budget || 5000), currency: profile.data.currency || 'THB', avatar: profile.data.avatar || '🐷', language: profile.data.language || 'en', reminders: Boolean(profile.data.reminders) } : { ...initialData.profile, name: 'Friend' },
     deposits: deposits.data.map(({ id, amount, note, deposited_on }) => ({ id, amount: Number(amount), note: note || '', date: deposited_on })),
     items: items.data.map(({ id, name, amount, category, stage, note, item_date, purchased_on, completed_at, created_at }) => ({ id, name, amount: Number(amount), category, stage, note: note || '', purchased_on, completedAt: completed_at, date: ['ledger','abandoned'].includes(stage) && purchased_on ? purchased_on : (item_date || created_at) })),
