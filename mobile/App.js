@@ -6,6 +6,15 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { useFonts } from 'expo-font';
+import { DMSans_400Regular } from '@expo-google-fonts/dm-sans/400Regular';
+import { DMSans_500Medium } from '@expo-google-fonts/dm-sans/500Medium';
+import { DMSans_600SemiBold } from '@expo-google-fonts/dm-sans/600SemiBold';
+import { DMSans_700Bold } from '@expo-google-fonts/dm-sans/700Bold';
+import { Manrope_700Bold } from '@expo-google-fonts/manrope/700Bold';
+import { Manrope_800ExtraBold } from '@expo-google-fonts/manrope/800ExtraBold';
+import { NotoSansMyanmar_400Regular } from '@expo-google-fonts/noto-sans-myanmar/400Regular';
+import { NotoSansMyanmar_500Medium } from '@expo-google-fonts/noto-sans-myanmar/500Medium';
 
 const SB_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SB_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -13,7 +22,7 @@ const supabase = SB_URL && SB_KEY ? createClient(SB_URL, SB_KEY, {
   auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
 }) : null;
 const STORAGE_KEY = 'finny-mobile-v1';
-const COLORS = { bg: '#f8f7f2', ink: '#25352e', muted: '#7a8981', green: '#4d8066', mint: '#dcefe2', pink: '#f7e2e9', coral: '#fbe6d9', line: '#e9e8df', white: '#fffefa', dark: '#254b39' };
+const COLORS = { bg: '#f4f6f0', ink: '#252923', muted: '#92978e', green: '#528364', mint: '#edf5eb', pink: '#f1eff8', coral: '#fbefec', line: '#e9ebe4', white: '#ffffff', dark: '#334239' };
 const CATEGORIES = [
   { id: 'need', label: 'Needs', my: 'မရှိမဖြစ်', color: '#8ec89b', emoji: '🥦' },
   { id: 'want', label: 'Wants', my: 'လိုချင်သော', color: '#e9aebf', emoji: '🎀' },
@@ -59,6 +68,11 @@ function Segments({ byCategory, total }) {
 }
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold,
+    Manrope_700Bold, Manrope_800ExtraBold,
+    NotoSansMyanmar_400Regular, NotoSansMyanmar_500Medium,
+  });
   const [session, setSession] = useState(null);
   const [booting, setBooting] = useState(true);
   const [data, setData] = useState(starter());
@@ -69,12 +83,20 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) { setBooting(false); return; }
-    supabase.auth.getSession().then(({ data: result }) => setSession(result.session)).catch(() => {}).finally(() => setBooting(false));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, value) => setSession(value));
-    return () => listener.subscription.unsubscribe();
+    let active = true;
+    const { data: listener } = supabase.auth.onAuthStateChange((event, value) => {
+      if (!active) return;
+      setSession(value);
+      if (event === 'SIGNED_OUT') {
+        setData(starter()); setTab('Home'); setEntry(null);
+        AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+      }
+    });
+    supabase.auth.getSession().then(({ data: result }) => { if (active) setSession(result.session); }).catch(() => {}).finally(() => { if (active) setBooting(false); });
+    return () => { active = false; listener.subscription.unsubscribe(); };
   }, []);
 
-  const refresh = useCallback(async userId => {
+  const refresh = useCallback(async (userId, displayName) => {
     if (!userId || !supabase) return;
     const [profileRes, depositsRes, itemsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
@@ -83,9 +105,14 @@ export default function App() {
     ]);
     const error = profileRes.error || depositsRes.error || itemsRes.error;
     if (error) throw error;
-    const p = profileRes.data;
+    let p = profileRes.data;
+    if (!p && displayName?.trim()) {
+      const { data: createdProfile, error: createError } = await supabase.from('profiles').upsert({ id: userId, name: displayName.trim(), goal: 10000, monthly_budget: 5000, currency: 'THB', avatar: '🐷', language: 'en', reminders: false }).select().single();
+      if (createError) throw createError;
+      p = createdProfile;
+    }
     const next = {
-      profile: p ? { name: p.name || 'Friend', goal: Number(p.goal || 10000), monthlyBudget: Number(p.monthly_budget || 5000), currency: p.currency || 'THB', avatar: p.avatar || '🐷', language: p.language || 'en', reminders: !!p.reminders } : starter('Friend').profile,
+      profile: p ? { name: p.name || displayName || 'Friend', goal: Number(p.goal || 10000), monthlyBudget: Number(p.monthly_budget || 5000), currency: p.currency || 'THB', avatar: p.avatar || '🐷', language: p.language || 'en', reminders: !!p.reminders } : { ...starter(displayName || 'Friend').profile },
       deposits: depositsRes.data.map(row => ({ id: row.id, amount: Number(row.amount), note: row.note || '', date: row.deposited_on })),
       items: itemsRes.data.map(row => ({ id: row.id, name: row.name, amount: Number(row.amount), category: row.category, stage: row.stage, note: row.note || '', date: ['ledger', 'abandoned'].includes(row.stage) && row.purchased_on ? row.purchased_on : row.item_date || row.created_at, purchased_on: row.purchased_on, completedAt: row.completed_at })),
     };
@@ -96,8 +123,8 @@ export default function App() {
   useEffect(() => {
     if (!session?.user?.id) return;
     setBusy(true);
-    refresh(session.user.id).catch(error => setNotice(`Could not sync: ${error.message}`)).finally(() => setBusy(false));
-  }, [session?.user?.id, refresh]);
+    refresh(session.user.id, session.user.user_metadata?.name).catch(() => setNotice('Could not sync your account yet. Check your connection and try again.')).finally(() => setBusy(false));
+  }, [session?.user?.id, session?.user?.user_metadata?.name, refresh]);
 
   const saved = data.deposits.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const confirmed = data.items.filter(item => ['ledger', 'abandoned'].includes(item.stage) && String(item.purchased_on || item.date || '').slice(0, 7) === today().slice(0, 7));
@@ -156,9 +183,9 @@ export default function App() {
     });
   };
 
-  if (booting) return <LoadingScreen/>;
+  if (booting || (!fontsLoaded && !fontError)) return <LoadingScreen/>;
   if (!supabase) return <SetupScreen/>;
-  if (!session) return <AuthScreen onNotice={setNotice}/>;
+  if (!session) return <AuthScreen/>;
 
   const screenProps = { data, saved, spent, confirmed, byCategory, onDeposit: () => setEntry({ type: 'deposit' }), onAddItem: () => setEntry({ type: 'item' }), onUpdateItem: updateItem, onDeleteItem: deleteItem, onSaveProfile: saveProfile, setTab, email: session.user.email, refresh: () => refresh(session.user.id) };
   return <SafeAreaView style={styles.safe}><StatusBar barStyle="dark-content" backgroundColor={COLORS.bg}/>
@@ -174,21 +201,65 @@ export default function App() {
 function LoadingScreen() { return <SafeAreaView style={styles.centered}><Text style={styles.brandPig}>🐷</Text><Text style={styles.brandText}>finny</Text><ActivityIndicator color={COLORS.green} style={{ marginTop: 18 }}/></SafeAreaView>; }
 function SetupScreen() { return <SafeAreaView style={styles.centered}><Text style={styles.heroEmoji}>🐷</Text><Text style={styles.authTitle}>Finny needs a home</Text><Text style={styles.bodyCenter}>Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in mobile/.env, then restart Expo.</Text><Text style={styles.setupHint}>The mobile app connects to the same private profile, deposits, and spending pipeline as your web app.</Text></SafeAreaView>; }
 
-function AuthScreen({ onNotice }) {
-  const [signup, setSignup] = useState(false); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [name, setName] = useState(''); const [submitting, setSubmitting] = useState(false);
+function authMessage(error) {
+  const message = String(error?.message || '').toLowerCase();
+  if (message.includes('invalid login credentials')) return 'That email and password don’t match. Check them and try again.';
+  if (message.includes('email not confirmed')) return 'Please confirm your email from the link we sent before signing in.';
+  if (message.includes('already registered') || message.includes('already been registered')) return 'An account already uses this email. Sign in instead.';
+  if (message.includes('invalid email')) return 'That email address doesn’t look right. Check its spelling.';
+  if (message.includes('password') && (message.includes('weak') || message.includes('least'))) return 'Choose a stronger password with at least 6 characters.';
+  if (message.includes('rate limit') || message.includes('too many')) return 'Too many attempts just now. Please wait a moment and try again.';
+  if (message.includes('fetch') || message.includes('network')) return 'We couldn’t reach Finny. Check your internet connection and try again.';
+  return 'We couldn’t complete that request. Please check your details and try again.';
+}
+
+function AuthScreen() {
+  const [signup, setSignup] = useState(false); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [name, setName] = useState(''); const [submitting, setSubmitting] = useState(false); const [message, setMessage] = useState(''); const [success, setSuccess] = useState(false); const [focused, setFocused] = useState('');
+  const switchMode = () => { setSignup(value => !value); setMessage(''); setSuccess(false); };
   const submit = async () => {
-    if (!email.trim() || !password) { Alert.alert('A quick check', 'Enter your email and password to continue.'); return; }
-    setSubmitting(true);
+    const cleanEmail = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) { setSuccess(false); setMessage('Enter a valid email address, such as you@example.com.'); return; }
+    if (signup && name.trim().length < 2) { setSuccess(false); setMessage('Add your name so Finny knows what to call you.'); return; }
+    if (password.length < 6) { setSuccess(false); setMessage('Your password must be at least 6 characters.'); return; }
+    setSubmitting(true); setMessage(''); setSuccess(false);
     try {
       if (signup) {
-        const { error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { name: name.trim() || 'Friend' } } });
+        const { data: result, error } = await supabase.auth.signUp({ email: cleanEmail, password, options: { data: { name: name.trim() } } });
         if (error) throw error;
-        Alert.alert('Check your inbox', 'Confirm your email if confirmation is enabled for your Supabase project.');
-      } else { const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password }); if (error) throw error; }
-    } catch (error) { onNotice(error.message); Alert.alert(signup ? 'Could not create account' : 'Could not sign in', error.message); }
+        if (!result.session) { setSuccess(true); setMessage('Your account is ready. Check your inbox to confirm your email, then sign in.'); }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        if (error) throw error;
+      }
+    } catch (error) { setSuccess(false); setMessage(authMessage(error)); }
     finally { setSubmitting(false); }
   };
-  return <SafeAreaView style={styles.authSafe}><View style={styles.authTop}><Text style={styles.brandPig}>🐷</Text><Text style={styles.brandText}>finny</Text></View><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.authWrap}><Surface style={styles.authCard}><Text style={styles.authEmoji}>🌱</Text><Label>A LITTLE BETTER, EVERY DAY</Label><Text style={styles.authTitle}>{signup ? 'Start your money garden' : 'Welcome back'}</Text><Text style={styles.authSub}>A calmer way to save, spend, and grow.</Text>{signup && <Field label="Your name" value={name} onChangeText={setName} placeholder="How should we call you?"/>}<Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" autoComplete="email"/><Field label="Password" value={password} onChangeText={setPassword} placeholder="At least 6 characters" secureTextEntry autoComplete={signup ? 'new-password' : 'current-password'}/><Button title={submitting ? 'One moment…' : signup ? 'Create account' : 'Sign in'} onPress={submit} disabled={submitting} style={{ marginTop: 8 }}/><Pressable onPress={() => setSignup(value => !value)} style={styles.authToggle}><Text style={styles.authToggleText}>{signup ? 'Already have an account? Sign in' : 'New to Finny? Create an account'}</Text></Pressable></Surface></KeyboardAvoidingView></SafeAreaView>;
+  const input = (label, value, onChangeText, placeholder, field, options = {}) => <View style={authStyles.field}>
+    <Text style={[authStyles.label, /[\u1000-\u109f]/.test(label) && authStyles.myanmar]}>{label}</Text>
+    <TextInput value={value} onChangeText={text => { onChangeText(text); if (message) setMessage(''); }} placeholder={placeholder} placeholderTextColor="#b5bab2" style={[authStyles.input, /[\u1000-\u109f]/.test(value) && authStyles.myanmarInput, focused === field && authStyles.inputFocused]} onFocus={() => setFocused(field)} onBlur={() => setFocused('')} autoCapitalize="none" autoCorrect={false} selectionColor="#528364" {...options}/>
+  </View>;
+  return <SafeAreaView style={authStyles.safe}><StatusBar barStyle="dark-content" backgroundColor="#f4f6f0"/>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={authStyles.keyboard}>
+      <ScrollView contentContainerStyle={authStyles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={authStyles.brand}><View style={authStyles.brandMark}><Text style={authStyles.brandLetter}>f</Text></View><Text style={authStyles.brandName}>finny</Text></View>
+        <View style={authStyles.card}>
+          <View style={authStyles.illustration}><View style={authStyles.sun}/><Text style={authStyles.sparkLeft}>✦</Text><Text style={authStyles.pig}>🐷</Text><Text style={authStyles.plant}>♧</Text><Text style={authStyles.sparkRight}>✦</Text></View>
+          <Text style={authStyles.eyebrow}>A LITTLE BETTER, EVERY DAY</Text>
+          <Text style={authStyles.title}>{signup ? 'A fresh start.' : 'Welcome back.'}</Text>
+          <Text style={authStyles.subtitle}>{signup ? 'Make a little room for the things that matter.' : 'A calmer way to save, spend, and grow.'}</Text>
+          {signup && input('Your name', name, setName, 'How should we call you?', 'name', { autoComplete: 'name', returnKeyType: 'next' })}
+          {input('Email', email, setEmail, 'you@example.com', 'email', { keyboardType: 'email-address', autoComplete: 'email', textContentType: 'emailAddress', returnKeyType: 'next' })}
+          {input('Password', password, setPassword, 'At least 6 characters', 'password', { secureTextEntry: true, autoComplete: signup ? 'new-password' : 'current-password', textContentType: signup ? 'newPassword' : 'password', returnKeyType: 'done', onSubmitEditing: submit })}
+          {message ? <Text accessibilityRole={success ? 'text' : 'alert'} style={[authStyles.message, success && authStyles.success]}>{message}</Text> : null}
+          <Pressable accessibilityRole="button" onPress={submit} disabled={submitting} style={({ pressed }) => [authStyles.submit, pressed && !submitting && { opacity: 0.85 }, submitting && { opacity: 0.7 }]}>
+            {submitting ? <ActivityIndicator color="#fff"/> : <Text style={authStyles.submitText}>{signup ? 'Create account' : 'Sign in'}</Text>}
+          </Pressable>
+          <View style={authStyles.toggleLine}><Text style={authStyles.togglePrompt}>{signup ? 'Already have an account?' : 'New to Finny?'}</Text><Pressable accessibilityRole="button" onPress={switchMode} hitSlop={8}><Text style={authStyles.toggleAction}>{signup ? ' Sign in' : ' Create an account'}</Text></Pressable></View>
+          <View style={authStyles.footer}><Text style={authStyles.footerIcon}>✳</Text><Text style={authStyles.footerText}>A gentle place for your money goals</Text></View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  </SafeAreaView>;
 }
 
 function ScreenScroll({ children, title, subtitle, action, contentStyle }) {
@@ -276,7 +347,7 @@ function SettingsScreen({ data, onSaveProfile, email }) {
     <Surface><View style={styles.profileHead}><Text style={styles.profileAvatar}>{profile.avatar}</Text><View style={{ flex: 1 }}><Text style={styles.sectionTitle}>{profile.name || 'Friend'}</Text><Text style={styles.caption}>{email}</Text></View></View><Field label="Your name" value={profile.name} onChangeText={value => patch('name', value)} placeholder="Name"/><Field label="Savings goal" value={String(profile.goal)} onChangeText={value => patch('goal', Number(latinDigits(value) || 0))} keyboardType="decimal-pad"/><Field label="Monthly budget" value={String(profile.monthlyBudget)} onChangeText={value => patch('monthlyBudget', Number(latinDigits(value) || 0))} keyboardType="decimal-pad"/><Text style={styles.fieldLabel}>Currency</Text><View style={styles.chips}>{['THB','MMK','USD'].map(currency => <Pressable key={currency} onPress={() => patch('currency', currency)} style={[styles.filterChip, profile.currency === currency && styles.filterSelected]}><Text style={[styles.filterText, profile.currency === currency && styles.filterTextSelected]}>{currency}</Text></Pressable>)}</View><Text style={styles.fieldLabel}>Piggy avatar</Text><View style={styles.chips}>{['🐷','🐸','🐻','🐰','🐼','🦊'].map(avatar => <Pressable key={avatar} onPress={() => patch('avatar', avatar)} style={[styles.avatarChoice, profile.avatar === avatar && styles.avatarChoiceSelected]}><Text style={{ fontSize: 22 }}>{avatar}</Text></Pressable>)}</View></Surface>
     <Surface><Label>LANGUAGE</Label><Text style={styles.caption}>Choose your language here. The sign-in screen stays simple.</Text><View style={styles.languageList}>{[['en','English'],['my','မြန်မာ'],['th','ไทย'],['ja','日本語']].map(([id, name]) => <Pressable key={id} onPress={() => patch('language', id)} style={styles.languageRow}><Text style={styles.languageName}>{name}</Text><Text style={[styles.radio, profile.language === id && styles.radioActive]}>{profile.language === id ? '●' : '○'}</Text></Pressable>)}</View></Surface>
     <Surface><View style={styles.rowBetween}><View style={{ flex: 1, marginRight: 10 }}><Text style={styles.boldSmall}>Daily logging reminder</Text><Text style={styles.caption}>A gentle nudge to check in with your money.</Text></View><Switch value={profile.reminders} onValueChange={value => patch('reminders', value)} trackColor={{ true: '#a9cfb2' }}/></View></Surface>
-    <Button title={saving ? 'Saving…' : 'Save settings'} onPress={save} disabled={saving}/><Button title="Sign out" variant="light" onPress={() => supabase.auth.signOut().catch(error => Alert.alert('Could not sign out', error.message))} style={{ marginTop: 9 }}/><Text style={[styles.caption, { textAlign: 'center' }]}>Your account stays private and syncs securely.</Text>
+    <Button title={saving ? 'Saving…' : 'Save settings'} onPress={save} disabled={saving}/><Button title="Log out" variant="light" onPress={() => supabase.auth.signOut().catch(() => Alert.alert('Could not log out', 'Please check your connection and try again.'))} style={{ marginTop: 9 }}/><Text style={[styles.caption, { textAlign: 'center' }]}>Your account stays private and syncs securely.</Text>
   </ScreenScroll>;
 }
 
@@ -303,4 +374,40 @@ function EntryModal({ value, close, onDeposit, onAddItem }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg }, centered: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center', padding: 28 }, authSafe: { flex: 1, backgroundColor: COLORS.bg }, authTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 26, gap: 8 }, brand: { flexDirection: 'row', alignItems: 'center', gap: 6 }, brandPig: { fontSize: 27 }, brandText: { fontSize: 25, fontWeight: '800', color: COLORS.dark, letterSpacing: -1 }, screen: { flex: 1 }, topBar: { height: 52, paddingHorizontal: 19, alignItems: 'center', justifyContent: 'space-between', flexDirection: 'row' }, avatarButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.mint }, avatar: { fontSize: 21 }, toast: { position: 'absolute', zIndex: 5, top: 56, alignSelf: 'center', backgroundColor: COLORS.dark, color: 'white', paddingHorizontal: 15, paddingVertical: 9, borderRadius: 20, fontSize: 12 }, syncLine: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', gap: 7, paddingBottom: 3 }, syncText: { color: COLORS.muted, fontSize: 11 }, tabBar: { flexDirection: 'row', backgroundColor: COLORS.white, borderTopColor: COLORS.line, borderTopWidth: 1, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 3 : 8 }, tabItem: { flex: 1, alignItems: 'center', gap: 2 }, tabIcon: { fontSize: 21, color: '#a3aea8', lineHeight: 24 }, tabActive: { color: COLORS.green }, tabLabel: { color: '#99a49e', fontSize: 10, fontWeight: '600' }, tabLabelActive: { color: COLORS.green }, pageContent: { paddingHorizontal: 17, paddingTop: 13, paddingBottom: 24, gap: 12 }, pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 }, pageTitle: { fontSize: 27, lineHeight: 34, fontWeight: '800', letterSpacing: -0.7, color: COLORS.ink, marginTop: 2 }, pageSubtitle: { fontSize: 13, lineHeight: 19, color: COLORS.muted, marginTop: 3 }, eyebrow: { fontSize: 9, letterSpacing: 1.1, fontWeight: '800', color: COLORS.muted, marginBottom: 4 }, surface: { backgroundColor: COLORS.white, borderRadius: 19, padding: 17, borderWidth: 1, borderColor: '#efeee7', marginBottom: 1 }, row: { flexDirection: 'row', alignItems: 'center' }, rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, goalCard: { backgroundColor: '#edf4e9' }, bigAmount: { color: COLORS.ink, fontSize: 27, fontWeight: '800', letterSpacing: -0.7, marginTop: 4 }, muted: { color: COLORS.muted, fontSize: 12, marginTop: 2 }, pigBubble: { width: 57, height: 57, borderRadius: 21, backgroundColor: '#dcefe2', alignItems: 'center', justifyContent: 'center' }, track: { height: 9, backgroundColor: '#e9eee6', borderRadius: 8, marginTop: 16, marginBottom: 8, overflow: 'hidden' }, fill: { height: '100%', borderRadius: 8 }, caption: { color: COLORS.muted, fontSize: 11, lineHeight: 16 }, streakBox: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14, padding: 11, borderRadius: 14, backgroundColor: '#ffffff9c' }, boldSmall: { fontSize: 13, fontWeight: '700', color: COLORS.ink }, budgetCard: { backgroundColor: '#fffefa' }, sectionTitle: { fontSize: 17, color: COLORS.ink, fontWeight: '700', marginTop: 1 }, healthPill: { fontWeight: '700', fontSize: 11 }, metricAmount: { fontSize: 20, fontWeight: '800', color: COLORS.ink, marginTop: 11 }, pipelineMini: { backgroundColor: '#fbf1ec' }, linkArrow: { color: COLORS.green, fontSize: 20 }, countRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginTop: 16 }, countNum: { fontWeight: '800', fontSize: 19, textAlign: 'center', color: COLORS.ink }, countDivider: { height: 31, width: 1, backgroundColor: '#e9ddd5' }, textLink: { color: COLORS.green, fontWeight: '700', fontSize: 12 }, segmentBar: { flexDirection: 'row', height: 10, borderRadius: 8, overflow: 'hidden', backgroundColor: '#f0f0eb', marginTop: 15, gap: 2 }, legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 11 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, legendDot: { width: 7, height: 7, borderRadius: 5 }, legendText: { fontSize: 10, color: COLORS.muted }, legendPercent: { color: COLORS.ink, fontWeight: '700' }, quoteTile: { backgroundColor: '#f5eee0', borderRadius: 15, marginTop: 12, padding: 14, minHeight: 145 }, quoteLabel: { fontSize: 10, fontWeight: '800', color: '#987e53', letterSpacing: 0.5 }, quoteMain: { color: COLORS.ink, fontSize: 13, lineHeight: 19, fontStyle: 'italic', marginTop: 9 }, quoteMy: { color: '#77857b', fontSize: 12, lineHeight: 18, marginTop: 5 }, quoteBy: { color: '#927c5c', fontSize: 10, textAlign: 'right', marginTop: 4 }, roundSmall: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' }, roundGlyph: { fontSize: 21, color: COLORS.green, lineHeight: 24 }, dots: { flexDirection: 'row', alignSelf: 'center', gap: 5, marginTop: 10 }, dot: { width: 5, height: 5, backgroundColor: '#d4d2c8', borderRadius: 3 }, dotActive: { width: 14, backgroundColor: COLORS.green }, quickActions: { flexDirection: 'row', gap: 8, marginBottom: 3 }, button: { backgroundColor: COLORS.dark, borderRadius: 13, minHeight: 43, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' }, buttonLight: { backgroundColor: '#f0f1eb' }, buttonSoft: { backgroundColor: '#dcefe2' }, buttonDanger: { backgroundColor: COLORS.coral }, buttonText: { color: 'white', fontSize: 12, fontWeight: '700', textAlign: 'center' }, buttonTextAlt: { color: COLORS.dark }, pressed: { opacity: 0.75, transform: [{ scale: 0.985 }] }, authWrap: { flex: 1, justifyContent: 'center', padding: 20 }, authCard: { padding: 22 }, authEmoji: { fontSize: 35, marginBottom: 12 }, authTitle: { color: COLORS.ink, fontWeight: '800', fontSize: 25, marginTop: 7 }, authSub: { color: COLORS.muted, fontSize: 13, marginTop: 4, marginBottom: 17 }, authToggle: { paddingTop: 17, alignItems: 'center' }, authToggleText: { color: COLORS.green, fontSize: 12, fontWeight: '700' }, bodyCenter: { color: COLORS.muted, fontSize: 14, lineHeight: 22, textAlign: 'center', marginTop: 8 }, setupHint: { color: COLORS.muted, fontSize: 12, textAlign: 'center', lineHeight: 19, marginTop: 14 }, field: { marginTop: 11 }, fieldLabel: { fontSize: 11, fontWeight: '700', color: '#607169', marginBottom: 6, marginTop: 12 }, input: { minHeight: 45, borderColor: COLORS.line, borderWidth: 1, backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: COLORS.ink }, multiline: { minHeight: 70, textAlignVertical: 'top' }, filterRow: { gap: 7, paddingVertical: 2 }, filterChip: { borderRadius: 20, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.white, paddingHorizontal: 12, paddingVertical: 8 }, filterSelected: { backgroundColor: COLORS.dark, borderColor: COLORS.dark }, filterText: { fontSize: 11, fontWeight: '700', color: COLORS.muted }, filterTextSelected: { color: 'white' }, stageIntro: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 }, stageIntroEmoji: { fontSize: 17 }, stageCard: { padding: 13, marginBottom: 0 }, stageHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }, stageIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, stageTitle: { fontWeight: '800', fontSize: 15, color: COLORS.ink }, stageNum: { borderRadius: 12, backgroundColor: '#f7f6f1', paddingHorizontal: 8, paddingVertical: 5 }, stageEmpty: { paddingVertical: 18, textAlign: 'center', color: '#99a49e', fontSize: 12 }, stageScrollExpanded: { maxHeight: 320 }, seeMore: { alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 7, marginTop: 7 }, seeMoreText: { color: COLORS.green, fontWeight: '700', fontSize: 11 }, itemCard: { borderWidth: 1, borderColor: COLORS.line, backgroundColor: '#fff', borderRadius: 14, padding: 12, marginTop: 4, marginBottom: 8 }, categoryPill: { borderRadius: 12, overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 5, fontSize: 10, fontWeight: '700' }, itemName: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: COLORS.ink, marginTop: 10 }, itemAmount: { color: COLORS.ink, fontSize: 17, fontWeight: '800', marginTop: 2 }, actionRow: { flexDirection: 'row', gap: 10, marginTop: 11 }, iconAction: { width: 38, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, iconActionText: { color: COLORS.dark, fontSize: 17, fontWeight: '700' }, archivedTag: { marginTop: 11, paddingVertical: 7, borderRadius: 10, backgroundColor: COLORS.mint, alignItems: 'center' }, archivedText: { color: COLORS.green, fontWeight: '700', fontSize: 11 }, empty: { alignItems: 'center', padding: 22 }, emptyEmoji: { fontSize: 34, marginBottom: 9 }, bodyText: { color: COLORS.muted, fontSize: 12, lineHeight: 18, marginTop: 6 }, stageIntroEmoji: { fontSize: 17 }, savingsHero: { alignItems: 'center', paddingVertical: 23 }, donutOuter: { width: 142, height: 142, borderRadius: 71, backgroundColor: '#e7f1e9', alignItems: 'center', justifyContent: 'center' }, donutProgress: { position: 'absolute', width: 142, height: 142, borderRadius: 71, borderWidth: 9, borderColor: COLORS.green }, donutCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.white, width: 112, height: 112, borderRadius: 56 }, donutPercent: { fontSize: 27, fontWeight: '800', color: COLORS.ink }, streakText: { fontSize: 12, color: COLORS.green, marginTop: 11 }, listRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 }, listEmoji: { width: 35, height: 35, borderRadius: 12, backgroundColor: COLORS.mint, alignItems: 'center', justifyContent: 'center' }, rowMoney: { color: COLORS.green, fontWeight: '800', fontSize: 13 }, analyticsHero: { backgroundColor: '#edf4e9' }, analyticsTotal: { fontSize: 32, fontWeight: '800', color: COLORS.ink, letterSpacing: -0.8, marginTop: 8 }, analyticsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 14 }, analyticsAmount: { color: COLORS.muted, fontSize: 11, fontWeight: '700' }, insightPig: { fontSize: 30, marginRight: 10 }, profileHead: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 10 }, profileAvatar: { width: 53, height: 53, textAlign: 'center', textAlignVertical: 'center', borderRadius: 18, overflow: 'hidden', backgroundColor: COLORS.mint, fontSize: 31 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 4 }, avatarChoice: { width: 43, height: 43, borderRadius: 14, backgroundColor: '#f4f4ef', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' }, avatarChoiceSelected: { borderColor: COLORS.green, backgroundColor: COLORS.mint }, languageList: { marginTop: 8 }, languageRow: { flexDirection: 'row', paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: COLORS.line, justifyContent: 'space-between' }, languageName: { color: COLORS.ink, fontSize: 13 }, radio: { color: '#c5ccc5' }, radioActive: { color: COLORS.green }, modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#1e322966' }, modalKeyboard: { width: '100%' }, modalSheet: { maxHeight: '92%', backgroundColor: COLORS.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 19, paddingTop: 11, paddingBottom: Platform.OS === 'ios' ? 28 : 17 }, modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#d4d5cb', alignSelf: 'center', marginBottom: 13 }, modalTitle: { color: COLORS.ink, fontSize: 21, fontWeight: '800' }, modalClose: { backgroundColor: '#eeeee7', width: 33, height: 33, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, modalButtons: { flexDirection: 'row', gap: 9, marginTop: 14 }, stageIntroEmoji: { fontSize: 17 },
+});
+
+const authStyles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#f4f6f0' },
+  keyboard: { flex: 1 },
+  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 22 },
+  brand: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 17 },
+  brandMark: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#cfe8d2', alignItems: 'center', justifyContent: 'center' },
+  brandLetter: { fontFamily: 'Manrope_800ExtraBold', fontSize: 23, lineHeight: 28, color: '#528364' },
+  brandName: { fontFamily: 'Manrope_800ExtraBold', fontSize: 22, letterSpacing: -0.8, color: '#334239' },
+  card: { width: '100%', maxWidth: 420, backgroundColor: '#fff', borderColor: '#e8ebe4', borderWidth: 1, borderRadius: 20, paddingHorizontal: 24, paddingTop: 18, paddingBottom: 18, shadowColor: '#3f4d37', shadowOpacity: 0.07, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 3 },
+  illustration: { height: 116, position: 'relative', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 4 },
+  sun: { position: 'absolute', width: 94, height: 94, borderRadius: 47, top: 11, backgroundColor: '#eff5e9' },
+  pig: { fontSize: 59, zIndex: 1 },
+  plant: { position: 'absolute', right: '16%', top: 18, color: '#9fc6a0', fontSize: 26 },
+  sparkLeft: { position: 'absolute', left: '19%', top: 23, color: '#e8bd86', fontSize: 17 },
+  sparkRight: { position: 'absolute', right: '22%', bottom: 11, color: '#e8bd86', fontSize: 18 },
+  eyebrow: { fontFamily: 'DMSans_700Bold', color: '#92978e', fontSize: 10, letterSpacing: 1.2, textAlign: 'center', marginTop: 4 },
+  title: { fontFamily: 'Manrope_700Bold', color: '#252923', fontSize: 27, lineHeight: 35, textAlign: 'center', letterSpacing: -0.8, marginTop: 6 },
+  subtitle: { fontFamily: 'DMSans_400Regular', color: '#90968d', fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 5, marginBottom: 13 },
+  field: { marginTop: 10 },
+  label: { fontFamily: 'DMSans_600SemiBold', color: '#687065', fontSize: 12, marginBottom: 7 },
+  myanmar: { fontFamily: 'NotoSansMyanmar_500Medium', lineHeight: 20 },
+  myanmarInput: { fontFamily: 'NotoSansMyanmar_400Regular', fontSize: 15, lineHeight: 23 },
+  input: { height: 49, borderWidth: 1, borderColor: '#e6e9e2', borderRadius: 9, backgroundColor: '#fdfefc', paddingHorizontal: 13, color: '#343b32', fontFamily: 'DMSans_400Regular', fontSize: 15 },
+  inputFocused: { borderColor: '#94bd99', backgroundColor: '#fff' },
+  message: { fontFamily: 'DMSans_500Medium', color: '#a15f53', backgroundColor: '#fbefec', borderRadius: 8, paddingHorizontal: 11, paddingVertical: 10, fontSize: 13, lineHeight: 19, marginTop: 12 },
+  success: { color: '#527357', backgroundColor: '#edf5eb' },
+  submit: { minHeight: 50, backgroundColor: '#334239', borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginTop: 14, paddingHorizontal: 16 },
+  submitText: { fontFamily: 'DMSans_700Bold', color: '#fff', fontSize: 15 },
+  toggleLine: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', paddingVertical: 17 },
+  togglePrompt: { fontFamily: 'DMSans_400Regular', color: '#8e948b', fontSize: 13 },
+  toggleAction: { fontFamily: 'DMSans_700Bold', color: '#5e8964', fontSize: 13 },
+  footer: { borderTopWidth: 1, borderTopColor: '#f0f1ed', paddingTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  footerIcon: { color: '#89ad8c', fontSize: 15 },
+  footerText: { fontFamily: 'DMSans_400Regular', color: '#9ba097', fontSize: 11 },
 });

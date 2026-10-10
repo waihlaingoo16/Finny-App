@@ -8,7 +8,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
-      "backgroundColor": "#f8f7f2"
+      "backgroundColor": "#f4f6f0"
     },
     "ios": {
       "supportsTablet": true,
@@ -17,7 +17,7 @@
     "android": {
       "package": "com.finny.finance",
       "adaptiveIcon": {
-        "backgroundColor": "#f8f7f2"
+        "backgroundColor": "#f4f6f0"
       }
     }
   }
