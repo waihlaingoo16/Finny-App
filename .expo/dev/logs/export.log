@@ -1,0 +1,7 @@
+{"_e":"root:init","_t":1791598610689,"format":"v0-jsonl","version":"57.0.28"}
+{"_e":"env:mode","_t":1791598611629,"nodeEnv":"production","babelEnv":"production","mode":"production"}
+{"_e":"env:load","_t":1791598611643,"mode":"production","files":["../..\\..\\.env.local"],"env":{"VITE_SUPABASE_ANON_KEY":"sb_publishable_HgywsfXwyLl8cEUqp_be5w_-obXb8LP","VITE_SUPABASE_URL":"https://sordmlpisfjscmnwsgqd.supabase.co"}}
+{"_e":"devserver:start","_t":1791598611691,"mode":"production","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":true}
+{"_e":"metro:config","_t":1791598613416,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":true,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"metro:instantiate","_t":1791598614422,"atlas":false,"workers":6,"host":null,"port":null}
+{"_e":"metro:bundling:started","_t":1791598617742,"id":"1","platform":"android","environment":null,"entry":"mobile\\index.js"}
